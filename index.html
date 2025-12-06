@@ -1,0 +1,902 @@
+<!DOCTYPE html>
+<html lang="en" class="dark">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Gemini Agent</title>
+
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script>
+        tailwind.config = {
+            darkMode: 'class',
+            theme: {
+                extend: {
+                    colors: {
+                        dark: {
+                            bg: '#1a1a1a',
+                            card: '#2d2d2d',
+                            border: '#404040'
+                        }
+                    }
+                }
+            }
+        }
+    </script>
+
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+    
+    <link href="https://fonts.googleapis.com/icon?family=Material+Icons" rel="stylesheet">
+
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/themes/prism-tomorrow.min.css" rel="stylesheet" />
+
+    <script>
+        window.MathJax = {
+            tex: { inlineMath: [['$', '$'], ['\\(', '\\)']] },
+            svg: { fontCache: 'global' }
+        };
+    </script>
+    <script type="text/javascript" id="MathJax-script" async src="https://cdn.jsdelivr.net/npm/mathjax@3/es5/tex-mml-chtml.js"></script>
+
+    <style>
+        /* Custom Scrollbar */
+        ::-webkit-scrollbar {
+            width: 8px;
+            height: 8px;
+        }
+        ::-webkit-scrollbar-track {
+            background: transparent;
+        }
+        ::-webkit-scrollbar-thumb {
+            background: #888;
+            border-radius: 4px;
+        }
+        ::-webkit-scrollbar-thumb:hover {
+            background: #555;
+        }
+
+        /* Sidebar Transition */
+        #sidebar {
+            transition: transform 0.3s ease-in-out;
+            z-index: 50;
+        }
+        
+        /* Chat Area */
+        #chat-area {
+            scroll-behavior: smooth;
+        }
+
+        /* Bubbles */
+        .bubble {
+            max-width: 85%;
+            word-wrap: break-word;
+        }
+        
+        /* Message Actions */
+        .message-actions {
+            opacity: 0;
+            transition: opacity 0.2s;
+        }
+        .message-container:hover .message-actions {
+            opacity: 1;
+        }
+
+        /* Special Highlighting for Important/Note */
+        .highlight-box {
+            background-color: rgba(255, 193, 7, 0.15);
+            border-left: 4px solid #ffc107;
+            padding: 10px;
+            margin: 10px 0;
+            border-radius: 4px;
+        }
+        .dark .highlight-box {
+            background-color: rgba(255, 193, 7, 0.1);
+        }
+
+        /* Status Dot Animation */
+        .status-dot {
+            width: 8px;
+            height: 8px;
+            border-radius: 50%;
+            display: inline-block;
+        }
+        .status-dot.pulsing {
+            animation: pulse 1.5s infinite;
+        }
+        @keyframes pulse {
+            0% { opacity: 1; transform: scale(1); }
+            50% { opacity: 0.5; transform: scale(1.2); }
+            100% { opacity: 1; transform: scale(1); }
+        }
+
+        /* Prism Fixes */
+        pre {
+            border-radius: 0.5rem;
+            margin-top: 0.5rem;
+            margin-bottom: 0.5rem;
+        }
+    </style>
+</head>
+<body class="bg-gray-100 dark:bg-gray-900 text-gray-800 dark:text-gray-100 h-screen flex overflow-hidden transition-colors duration-200">
+
+    <aside id="sidebar" class="fixed inset-y-0 left-0 w-80 bg-white dark:bg-[#1e1e1e] border-r border-gray-200 dark:border-gray-700 transform -translate-x-full md:translate-x-0 flex flex-col p-4 shadow-xl">
+        <div class="flex justify-between items-center mb-6">
+            <h2 class="text-xl font-bold flex items-center gap-2">
+                <span class="material-icons text-blue-500">settings</span> Settings
+            </h2>
+            <button id="close-sidebar-btn" class="md:hidden text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200">
+                <span class="material-icons">close</span>
+            </button>
+        </div>
+
+        <div class="overflow-y-auto flex-1 space-y-5 pr-2">
+            <div>
+                <label class="block text-sm font-medium mb-1">Gemini API Key</label>
+                <input type="password" id="setting-api-key" placeholder="Paste your Gemini API key" 
+                    class="w-full p-2 rounded border border-gray-300 dark:border-gray-600 bg-gray-50 dark:bg-gray-800 focus:ring-2 focus:ring-blue-500 outline-none text-sm">
+            </div>
+
+            <div>
+                <label class="block text-sm font-medium mb-1">Model</label>
+                <select id="setting-model" class="w-full p-2 rounded border border-gray-300 dark:border-gray-600 bg-gray-50 dark:bg-gray-800 outline-none text-sm">
+                    <option value="gemini-2.5-flash">gemini-2.5-flash</option>
+                    <option value="gemini-2.5-pro">gemini-2.5-pro</option>
+                    <option value="gemini-2.5-flash-lite">gemini-2.5-flash-lite</option>
+                    <option value="gemini-3-pro-preview">gemini-3-pro-preview</option>
+                </select>
+            </div>
+
+            <div>
+                <label class="block text-sm font-medium mb-1 flex justify-between">
+                    <span>Max Output Tokens</span>
+                    <span id="disp-max-tokens" class="text-blue-500">1024</span>
+                </label>
+                <input type="range" id="setting-max-tokens" min="256" max="4096" step="256" value="1024" class="w-full accent-blue-500">
+            </div>
+
+            <div>
+                <label class="block text-sm font-medium mb-1 flex justify-between">
+                    <span>Creativity</span>
+                    <span id="disp-temperature" class="text-blue-500">0.7</span>
+                </label>
+                <input type="range" id="setting-temperature" min="0.0" max="1.0" step="0.1" value="0.7" class="w-full accent-blue-500">
+                <div class="flex justify-between text-xs text-gray-500 mt-1">
+                    <span>Precise</span>
+                    <span>Balanced</span>
+                    <span>Creative</span>
+                </div>
+            </div>
+
+            <div class="space-y-2">
+                <div class="flex items-center justify-between">
+                    <label class="text-sm">Streaming (simulated)</label>
+                    <input type="checkbox" id="setting-streaming" checked class="accent-blue-500 w-4 h-4">
+                </div>
+                <div class="flex items-center justify-between">
+                    <label class="text-sm">Show Suggestions</label>
+                    <input type="checkbox" id="setting-suggestions" checked class="accent-blue-500 w-4 h-4">
+                </div>
+            </div>
+
+            <div class="pt-4 border-t border-gray-200 dark:border-gray-700">
+                <button id="theme-toggle" class="flex items-center gap-2 w-full p-2 rounded hover:bg-gray-200 dark:hover:bg-gray-800 transition">
+                    <span class="material-icons" id="theme-icon">dark_mode</span>
+                    <span id="theme-text">Switch to Light Mode</span>
+                </button>
+            </div>
+        </div>
+    </aside>
+
+    <main class="flex-1 flex flex-col md:ml-80 h-full relative">
+        
+        <header class="h-16 border-b border-gray-200 dark:border-gray-700 bg-white dark:bg-[#1e1e1e] flex items-center justify-between px-4 z-10 shrink-0">
+            <div class="flex items-center gap-3">
+                <button id="open-sidebar-btn" class="md:hidden text-gray-600 dark:text-gray-300">
+                    <span class="material-icons">menu</span>
+                </button>
+                <div>
+                    <h1 class="font-bold text-lg leading-tight">Gemini Agent</h1>
+                    <p class="text-xs text-gray-500 dark:text-gray-400" id="topbar-model">Model: gemini-2.5-flash</p>
+                </div>
+            </div>
+            
+            <div class="flex items-center gap-2 bg-gray-100 dark:bg-gray-800 px-3 py-1 rounded-full border border-gray-200 dark:border-gray-700">
+                <span id="status-dot" class="status-dot bg-green-500"></span>
+                <span id="status-text" class="text-xs font-medium">Idle</span>
+            </div>
+        </header>
+
+        <div id="suggestions-bar" class="bg-gray-50 dark:bg-[#1a1a1a] border-b border-gray-200 dark:border-gray-700 p-2 overflow-x-auto whitespace-nowrap shrink-0 hidden">
+            <button class="suggestion-chip px-3 py-1 rounded-full bg-white dark:bg-gray-800 border border-gray-300 dark:border-gray-600 text-sm mr-2 hover:bg-blue-50 dark:hover:bg-gray-700 transition shadow-sm" data-prompt="Generate an image prompt for a cyberpunk samurai in a neon city.">Image prompt: cyberpunk samurai</button>
+            <button class="suggestion-chip px-3 py-1 rounded-full bg-white dark:bg-gray-800 border border-gray-300 dark:border-gray-600 text-sm mr-2 hover:bg-blue-50 dark:hover:bg-gray-700 transition shadow-sm" data-prompt="Summarize the key points of the following text and highlight important data: [Paste Text Here]">Summarize & highlight</button>
+            <button class="suggestion-chip px-3 py-1 rounded-full bg-white dark:bg-gray-800 border border-gray-300 dark:border-gray-600 text-sm mr-2 hover:bg-blue-50 dark:hover:bg-gray-700 transition shadow-sm" data-prompt="Explain this code step-by-step and optimize it if possible:\n\n```javascript\n// Code here\n```">Explain this code</button>
+            <button class="suggestion-chip px-3 py-1 rounded-full bg-white dark:bg-gray-800 border border-gray-300 dark:border-gray-600 text-sm mr-2 hover:bg-blue-50 dark:hover:bg-gray-700 transition shadow-sm" data-prompt="Analyze the following dataset for trends and anomalies: ">Analyze data</button>
+        </div>
+
+        <div id="chat-area" class="flex-1 overflow-y-auto p-4 space-y-6">
+            <div class="message-container flex gap-3">
+                <div class="w-8 h-8 rounded-full bg-blue-600 flex items-center justify-center text-white shrink-0">
+                    <span class="material-icons text-sm">smart_toy</span>
+                </div>
+                <div class="flex-1 min-w-0">
+                    <div class="bubble bg-gray-200 dark:bg-gray-800 p-3 rounded-2xl rounded-tl-none text-sm md:text-base shadow-sm inline-block">
+                        Hello! I am your Gemini AI agent. Please set your API key in the sidebar settings to get started.
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <div class="p-4 bg-white dark:bg-[#1e1e1e] border-t border-gray-200 dark:border-gray-700 shrink-0">
+            <div class="max-w-4xl mx-auto space-y-2">
+                
+                <div class="flex items-center gap-2">
+                    <button id="attach-btn" class="text-gray-500 hover:text-blue-500 transition flex items-center gap-1 text-sm font-medium">
+                        <span class="material-icons text-lg">attach_file</span> Attach file
+                    </button>
+                    <input type="file" id="file-input" class="hidden">
+                    
+                    <div id="file-pill" class="hidden items-center gap-2 bg-blue-100 dark:bg-blue-900 text-blue-800 dark:text-blue-200 px-2 py-1 rounded-full text-xs">
+                        <span id="file-name" class="truncate max-w-[150px]">filename.pdf</span>
+                        <span id="file-size" class="opacity-75">(1.2MB)</span>
+                        <button id="remove-file" class="hover:text-red-500"><span class="material-icons text-sm">close</span></button>
+                    </div>
+                </div>
+
+                <div class="relative flex items-end gap-2 bg-gray-100 dark:bg-gray-800 p-2 rounded-2xl border border-transparent focus-within:border-blue-500 focus-within:ring-1 focus-within:ring-blue-500 transition-all shadow-sm">
+                    <button id="mic-btn" class="p-2 rounded-full text-gray-500 hover:bg-gray-200 dark:hover:bg-gray-700 transition" title="Voice Input">
+                        <span class="material-icons">mic</span>
+                    </button>
+                    
+                    <textarea id="prompt-input" rows="1" class="w-full bg-transparent border-none focus:ring-0 resize-none py-2 max-h-40 text-sm md:text-base dark:text-gray-100" placeholder="Ask anything..."></textarea>
+                    
+                    <button id="send-btn" class="p-2 rounded-full bg-blue-600 text-white hover:bg-blue-700 transition disabled:opacity-50 shadow-md">
+                        <span class="material-icons">send</span>
+                    </button>
+                </div>
+                <div class="text-center">
+                    <span class="text-[10px] text-gray-400">Press Enter to send · Shift+Enter for new line · <span id="stt-status" class="hidden text-red-500 font-bold">Listening...</span></span>
+                </div>
+            </div>
+        </div>
+    </main>
+
+    <div id="toast" class="fixed bottom-5 right-5 px-4 py-2 rounded shadow-lg text-white text-sm transform transition-all duration-300 translate-y-20 opacity-0 z-50"></div>
+
+    <div class="modal fade" id="exportModal" tabindex="-1" aria-hidden="true">
+        <div class="modal-dialog modal-lg modal-dialog-centered">
+            <div class="modal-content dark:bg-[#2d2d2d] dark:text-white">
+                <div class="modal-header border-b border-gray-200 dark:border-gray-600">
+                    <h5 class="modal-title">Export Message</h5>
+                    <button type="button" class="btn-close dark:filter dark:invert" data-bs-dismiss="modal" aria-label="Close"></button>
+                </div>
+                <div class="modal-body">
+                    <textarea id="export-textarea" class="w-full h-64 p-3 rounded border border-gray-300 dark:border-gray-600 bg-gray-50 dark:bg-gray-800 text-sm font-mono"></textarea>
+                </div>
+                <div class="modal-footer border-t border-gray-200 dark:border-gray-600">
+                    <button type="button" class="btn btn-secondary btn-sm" data-bs-dismiss="modal">Close</button>
+                    <button type="button" id="modal-copy-btn" class="btn btn-primary btn-sm">Copy</button>
+                    <button type="button" id="modal-download-btn" class="btn btn-success btn-sm">Download .txt</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/prism.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/components/prism-javascript.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/components/prism-python.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/components/prism-css.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/components/prism-json.min.js"></script>
+
+    <script>
+        /**
+         * GLOBAL STATE
+         */
+        const state = {
+            history: [], // { role: "user" | "model", text: string }
+            settings: {
+                apiKey: "",
+                model: "gemini-2.5-flash",
+                maxTokens: 1024,
+                temperature: 0.7,
+                streaming: true,
+                showSuggestions: true,
+                theme: "dark"
+            },
+            currentAudio: null,
+            currentAudioMsgId: null,
+            attachedFile: null, // { name: string, size: string }
+            isSpeaking: false
+        };
+
+        // DOM Elements
+        const els = {
+            sidebar: document.getElementById('sidebar'),
+            closeSidebarBtn: document.getElementById('close-sidebar-btn'),
+            openSidebarBtn: document.getElementById('open-sidebar-btn'),
+            themeToggle: document.getElementById('theme-toggle'),
+            themeIcon: document.getElementById('theme-icon'),
+            themeText: document.getElementById('theme-text'),
+            
+            apiKeyInput: document.getElementById('setting-api-key'),
+            modelSelect: document.getElementById('setting-model'),
+            maxTokensInput: document.getElementById('setting-max-tokens'),
+            dispMaxTokens: document.getElementById('disp-max-tokens'),
+            tempInput: document.getElementById('setting-temperature'),
+            dispTemp: document.getElementById('disp-temperature'),
+            streamingCheck: document.getElementById('setting-streaming'),
+            suggestionsCheck: document.getElementById('setting-suggestions'),
+            
+            topbarModel: document.getElementById('topbar-model'),
+            statusDot: document.getElementById('status-dot'),
+            statusText: document.getElementById('status-text'),
+            suggestionsBar: document.getElementById('suggestions-bar'),
+            
+            chatArea: document.getElementById('chat-area'),
+            
+            attachBtn: document.getElementById('attach-btn'),
+            fileInput: document.getElementById('file-input'),
+            filePill: document.getElementById('file-pill'),
+            fileName: document.getElementById('file-name'),
+            fileSize: document.getElementById('file-size'),
+            removeFileBtn: document.getElementById('remove-file'),
+            
+            micBtn: document.getElementById('mic-btn'),
+            sttStatus: document.getElementById('stt-status'),
+            promptInput: document.getElementById('prompt-input'),
+            sendBtn: document.getElementById('send-btn'),
+            
+            toast: document.getElementById('toast'),
+            exportModal: new bootstrap.Modal(document.getElementById('exportModal')),
+            exportTextarea: document.getElementById('export-textarea'),
+            modalCopyBtn: document.getElementById('modal-copy-btn'),
+            modalDownloadBtn: document.getElementById('modal-download-btn')
+        };
+
+        /**
+         * INITIALIZATION
+         */
+        document.addEventListener('DOMContentLoaded', () => {
+            loadSettings();
+            setupEventListeners();
+            applyTheme();
+            updateUIFromSettings();
+        });
+
+        function loadSettings() {
+            const savedSettings = localStorage.getItem("gemini-agent-settings-v1");
+            if (savedSettings) {
+                state.settings = { ...state.settings, ...JSON.parse(savedSettings) };
+            }
+            // Load theme specifically (or default to dark)
+            const savedTheme = localStorage.getItem("gemini-agent-theme-v1");
+            if (savedTheme) state.settings.theme = savedTheme;
+        }
+
+        function saveSettings() {
+            localStorage.setItem("gemini-agent-settings-v1", JSON.stringify(state.settings));
+            localStorage.setItem("gemini-agent-theme-v1", state.settings.theme);
+        }
+
+        function updateUIFromSettings() {
+            els.apiKeyInput.value = state.settings.apiKey;
+            els.modelSelect.value = state.settings.model;
+            els.maxTokensInput.value = state.settings.maxTokens;
+            els.dispMaxTokens.innerText = state.settings.maxTokens;
+            els.tempInput.value = state.settings.temperature;
+            els.dispTemp.innerText = state.settings.temperature;
+            els.streamingCheck.checked = state.settings.streaming;
+            els.suggestionsCheck.checked = state.settings.showSuggestions;
+            
+            els.topbarModel.innerText = `Model: ${state.settings.model}`;
+            
+            if (state.settings.showSuggestions) {
+                els.suggestionsBar.classList.remove('hidden');
+            } else {
+                els.suggestionsBar.classList.add('hidden');
+            }
+        }
+
+        function applyTheme() {
+            const html = document.documentElement;
+            if (state.settings.theme === 'dark') {
+                html.classList.add('dark');
+                els.themeIcon.innerText = 'light_mode';
+                els.themeText.innerText = 'Switch to Light Mode';
+            } else {
+                html.classList.remove('dark');
+                els.themeIcon.innerText = 'dark_mode';
+                els.themeText.innerText = 'Switch to Dark Mode';
+            }
+        }
+
+        /**
+         * EVENT LISTENERS
+         */
+        function setupEventListeners() {
+            // Sidebar Toggles
+            els.openSidebarBtn.addEventListener('click', () => {
+                els.sidebar.classList.remove('-translate-x-full');
+            });
+            els.closeSidebarBtn.addEventListener('click', () => {
+                els.sidebar.classList.add('-translate-x-full');
+            });
+
+            // Settings Inputs
+            els.apiKeyInput.addEventListener('input', (e) => { state.settings.apiKey = e.target.value; saveSettings(); });
+            els.modelSelect.addEventListener('change', (e) => { 
+                state.settings.model = e.target.value; 
+                els.topbarModel.innerText = `Model: ${state.settings.model}`;
+                saveSettings(); 
+            });
+            els.maxTokensInput.addEventListener('input', (e) => { 
+                state.settings.maxTokens = parseInt(e.target.value); 
+                els.dispMaxTokens.innerText = state.settings.maxTokens;
+                saveSettings(); 
+            });
+            els.tempInput.addEventListener('input', (e) => { 
+                state.settings.temperature = parseFloat(e.target.value); 
+                els.dispTemp.innerText = state.settings.temperature;
+                saveSettings(); 
+            });
+            els.streamingCheck.addEventListener('change', (e) => { state.settings.streaming = e.target.checked; saveSettings(); });
+            els.suggestionsCheck.addEventListener('change', (e) => { 
+                state.settings.showSuggestions = e.target.checked; 
+                updateUIFromSettings();
+                saveSettings(); 
+            });
+
+            // Theme Toggle
+            els.themeToggle.addEventListener('click', () => {
+                state.settings.theme = state.settings.theme === 'dark' ? 'light' : 'dark';
+                applyTheme();
+                saveSettings();
+            });
+
+            // Auto-resize Textarea
+            els.promptInput.addEventListener('input', function() {
+                this.style.height = 'auto';
+                this.style.height = (this.scrollHeight) + 'px';
+                if(this.value === '') this.style.height = 'auto';
+            });
+
+            // Send Actions
+            els.promptInput.addEventListener('keydown', (e) => {
+                if (e.key === 'Enter' && !e.shiftKey) {
+                    e.preventDefault();
+                    sendMessage();
+                }
+            });
+            els.sendBtn.addEventListener('click', sendMessage);
+
+            // File Upload
+            els.attachBtn.addEventListener('click', () => els.fileInput.click());
+            els.fileInput.addEventListener('change', handleFileSelect);
+            els.removeFileBtn.addEventListener('click', clearFile);
+
+            // Suggestions
+            document.querySelectorAll('.suggestion-chip').forEach(chip => {
+                chip.addEventListener('click', () => {
+                    els.promptInput.value = chip.getAttribute('data-prompt');
+                    els.promptInput.focus();
+                    els.promptInput.dispatchEvent(new Event('input')); // trigger resize
+                });
+            });
+
+            // Speech to Text
+            els.micBtn.addEventListener('click', handleSpeechToText);
+
+            // Export Modal Actions
+            els.modalCopyBtn.addEventListener('click', () => {
+                navigator.clipboard.writeText(els.exportTextarea.value);
+                showToast("Copied to clipboard", "success");
+            });
+            els.modalDownloadBtn.addEventListener('click', () => {
+                downloadText(els.exportTextarea.value, "ai-export.txt");
+            });
+        }
+
+        /**
+         * FILE HANDLING
+         */
+        function handleFileSelect(e) {
+            const file = e.target.files[0];
+            if (!file) return;
+
+            state.attachedFile = {
+                name: file.name,
+                size: humanFileSize(file.size)
+            };
+
+            els.fileName.innerText = state.attachedFile.name;
+            els.fileSize.innerText = `(${state.attachedFile.size})`;
+            els.filePill.classList.remove('hidden');
+            els.filePill.classList.add('flex');
+        }
+
+        function clearFile() {
+            els.fileInput.value = '';
+            state.attachedFile = null;
+            els.filePill.classList.add('hidden');
+            els.filePill.classList.remove('flex');
+        }
+
+        function humanFileSize(bytes, si=true, dp=1) {
+            const thresh = si ? 1000 : 1024;
+            if (Math.abs(bytes) < thresh) return bytes + ' B';
+            const units = si ? ['kB', 'MB', 'GB', 'TB'] : ['KiB', 'MiB', 'GiB', 'TiB'];
+            let u = -1;
+            const r = 10**dp;
+            do {
+                bytes /= thresh;
+                ++u;
+            } while (Math.round(Math.abs(bytes) * r) / r >= thresh && u < units.length - 1);
+            return bytes.toFixed(dp) + ' ' + units[u];
+        }
+
+        /**
+         * SPEECH TO TEXT
+         */
+        function handleSpeechToText() {
+            if (!('webkitSpeechRecognition' in window) && !('SpeechRecognition' in window)) {
+                showToast("Speech-to-text is not supported in this browser.", "error");
+                return;
+            }
+
+            const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+            const recognition = new SpeechRecognition();
+            recognition.continuous = false;
+            recognition.interimResults = false;
+            recognition.lang = 'en-US';
+
+            recognition.onstart = () => {
+                els.sttStatus.classList.remove('hidden');
+            };
+
+            recognition.onresult = (event) => {
+                const transcript = event.results[0][0].transcript;
+                els.promptInput.value += (els.promptInput.value ? ' ' : '') + transcript;
+                els.promptInput.dispatchEvent(new Event('input'));
+            };
+
+            recognition.onerror = (event) => {
+                showToast("Speech recognition error", "error");
+                els.sttStatus.classList.add('hidden');
+            };
+
+            recognition.onend = () => {
+                els.sttStatus.classList.add('hidden');
+            };
+
+            recognition.start();
+        }
+
+        /**
+         * CORE CHAT LOGIC
+         */
+        async function sendMessage() {
+            const text = els.promptInput.value.trim();
+            const hasFile = !!state.attachedFile;
+            
+            if (!text && !hasFile) return;
+            
+            if (!state.settings.apiKey) {
+                showToast("Paste your Gemini API key in settings first.", "error");
+                return;
+            }
+
+            // Construct User Message
+            let fullUserText = text;
+            if (hasFile) {
+                fullUserText += `\n\n[File context: User has attached a file named '${state.attachedFile.name}' of size ${state.attachedFile.size}. This frontend only sends metadata, not full file bytes.]`;
+            }
+
+            // UI Updates
+            addMessageToUI('user', fullUserText);
+            state.history.push({ role: "user", text: fullUserText });
+            
+            els.promptInput.value = '';
+            els.promptInput.style.height = 'auto';
+            clearFile();
+
+            // Status: Thinking
+            updateStatus("Thinking...", "pulsing bg-yellow-400");
+            
+            // Add placeholder AI message
+            const thinkingId = "thinking-" + Date.now();
+            addThinkingMessage(thinkingId);
+
+            try {
+                // Prepare API Request
+                const contents = state.history.map(m => ({
+                    role: m.role,
+                    parts: [{ text: m.text }]
+                }));
+
+                const body = {
+                    contents,
+                    generationConfig: {
+                        maxOutputTokens: state.settings.maxTokens,
+                        temperature: state.settings.temperature
+                    }
+                };
+
+                const url = `https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(state.settings.model)}:generateContent?key=${encodeURIComponent(state.settings.apiKey)}`;
+
+                // Fetch
+                const res = await fetch(url, {
+                    method: "POST",
+                    headers: { "Content-Type": "application/json" },
+                    body: JSON.stringify(body)
+                });
+
+                if (!res.ok) throw new Error(`API Error: ${res.statusText}`);
+
+                const data = await res.json();
+                
+                // Parse Candidate
+                let aiText = "";
+                const candidate = data.candidates && data.candidates[0];
+                if (candidate && candidate.content && candidate.content.parts) {
+                    aiText = candidate.content.parts.map(p => p.text || "").join("\n");
+                } else {
+                    aiText = "I didn't receive a valid response from the model.";
+                }
+
+                // Update State
+                state.history.push({ role: "model", text: aiText });
+
+                // Replace Thinking Bubble with Real Content
+                replaceThinkingWithContent(thinkingId, aiText);
+                updateStatus("Idle", "bg-green-500");
+
+            } catch (error) {
+                console.error(error);
+                showToast("Gemini API failed. Using fallback.", "error");
+                updateStatus("Error (fallback used)", "bg-red-500");
+                
+                const fallbackText = `**Error:** The live API call failed.\n\nPossible reasons:\n1. Incorrect API Key.\n2. Model access denied or doesn't exist.\n3. Network issues.\n\nPlease check your settings and browser console.`;
+                state.history.push({ role: "model", text: fallbackText });
+                replaceThinkingWithContent(thinkingId, fallbackText);
+            }
+        }
+
+        /**
+         * UI RENDERING
+         */
+        function addMessageToUI(role, text) {
+            const div = document.createElement('div');
+            div.className = "message-container flex gap-3 " + (role === 'user' ? "flex-row-reverse" : "");
+            
+            const avatarColor = role === 'user' ? "bg-gray-500" : "bg-blue-600";
+            const icon = role === 'user' ? "person" : "smart_toy";
+            const bubbleStyle = role === 'user' 
+                ? "bg-green-100 dark:bg-green-900 text-green-900 dark:text-green-100 rounded-tr-none" 
+                : "bg-gray-200 dark:bg-gray-800 rounded-tl-none";
+
+            // Simple text for user, safe formatted for AI
+            const contentHtml = role === 'user' 
+                ? escapeHtml(text).replace(/\n/g, '<br>') 
+                : formatAITextSafe(text);
+
+            div.innerHTML = `
+                <div class="w-8 h-8 rounded-full ${avatarColor} flex items-center justify-center text-white shrink-0">
+                    <span class="material-icons text-sm">${icon}</span>
+                </div>
+                <div class="flex-1 min-w-0 flex flex-col ${role === 'user' ? 'items-end' : 'items-start'}">
+                    <div class="bubble p-3 rounded-2xl shadow-sm text-sm md:text-base ${bubbleStyle}">
+                        ${contentHtml}
+                    </div>
+                    ${role === 'model' ? generateActionButtons(text) : ''}
+                </div>
+            `;
+            
+            els.chatArea.appendChild(div);
+            scrollToBottom();
+            
+            if (role === 'model') {
+                Prism.highlightAllUnder(div);
+                if (window.MathJax) {
+                    window.MathJax.typesetPromise([div]).catch((err) => console.log('MathJax error', err));
+                }
+            }
+        }
+
+        function addThinkingMessage(id) {
+            const div = document.createElement('div');
+            div.id = id;
+            div.className = "message-container flex gap-3";
+            div.innerHTML = `
+                <div class="w-8 h-8 rounded-full bg-blue-600 flex items-center justify-center text-white shrink-0">
+                    <span class="material-icons text-sm">smart_toy</span>
+                </div>
+                <div class="flex-1 min-w-0">
+                    <div class="bubble bg-gray-200 dark:bg-gray-800 p-3 rounded-2xl rounded-tl-none text-sm md:text-base shadow-sm inline-block">
+                        <span class="status-dot pulsing bg-gray-500"></span> Thinking...
+                    </div>
+                </div>
+            `;
+            els.chatArea.appendChild(div);
+            scrollToBottom();
+        }
+
+        function replaceThinkingWithContent(id, text) {
+            const el = document.getElementById(id);
+            if (!el) return;
+            
+            const formatted = formatAITextSafe(text);
+            
+            el.innerHTML = `
+                <div class="w-8 h-8 rounded-full bg-blue-600 flex items-center justify-center text-white shrink-0">
+                    <span class="material-icons text-sm">smart_toy</span>
+                </div>
+                <div class="flex-1 min-w-0 flex flex-col items-start">
+                    <div class="bubble bg-gray-200 dark:bg-gray-800 p-3 rounded-2xl rounded-tl-none text-sm md:text-base shadow-sm">
+                        ${formatted}
+                    </div>
+                    ${generateActionButtons(text)}
+                </div>
+            `;
+            
+            Prism.highlightAllUnder(el);
+            if (window.MathJax) {
+                window.MathJax.typesetPromise([el]).catch(err => {});
+            }
+            scrollToBottom();
+        }
+
+        function generateActionButtons(rawText) {
+            // Encode text safely for onclick handlers
+            const encoded = encodeURIComponent(rawText);
+            return `
+                <div class="message-actions flex gap-2 mt-1 ml-1">
+                    <button onclick="copyToClipboard('${encoded}')" class="text-gray-400 hover:text-blue-500" title="Copy"><span class="material-icons text-xs">content_copy</span></button>
+                    <button onclick="downloadTextFromURI('${encoded}')" class="text-gray-400 hover:text-blue-500" title="Download"><span class="material-icons text-xs">download</span></button>
+                    <button onclick="openExportModal('${encoded}')" class="text-gray-400 hover:text-blue-500" title="Export"><span class="material-icons text-xs">open_in_new</span></button>
+                    <button onclick="toggleSpeech(this, '${encoded}')" class="text-gray-400 hover:text-blue-500" title="Listen"><span class="material-icons text-xs">volume_up</span></button>
+                </div>
+            `;
+        }
+
+        function scrollToBottom() {
+            els.chatArea.scrollTop = els.chatArea.scrollHeight;
+        }
+
+        function updateStatus(text, dotClass) {
+            els.statusText.innerText = text;
+            els.statusDot.className = "status-dot " + dotClass;
+        }
+
+        /**
+         * TEXT FORMATTING
+         */
+        function escapeHtml(text) {
+            if (!text) return "";
+            return text
+                .replace(/&/g, "&amp;")
+                .replace(/</g, "&lt;")
+                .replace(/>/g, "&gt;")
+                .replace(/"/g, "&quot;")
+                .replace(/'/g, "&#039;");
+        }
+
+        function formatAITextSafe(text) {
+            let html = escapeHtml(text);
+
+            // 1. Code Blocks
+            // Regex for ```lang ... ```
+            html = html.replace(/```(\w+)?\n([\s\S]*?)```/g, (match, lang, code) => {
+                const language = lang || 'javascript';
+                return `<pre><code class="language-${language}">${code}</code></pre>`;
+            });
+
+            // 2. Bold (**text**)
+            html = html.replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>');
+
+            // 3. Important/Note/Warning Highlights (Start of line)
+            // Need to handle newlines properly since we haven't converted them yet
+            html = html.replace(/^((Important|Note|Warning):)(.*)$/gm, '<div class="highlight-box"><strong>$1</strong> $3</div>');
+
+            // 4. Newlines
+            // Double newline -> paragraph (margin)
+            // Single newline -> br
+            // But don't mess up pre tags (simple approach: restore pre content or use css)
+            // Since we already replaced code blocks with HTML, we need to be careful. 
+            // A simpler way for this single-file logic without complex parser:
+            // Just convert remaining newlines to <br> if not inside tags. 
+            // However, Prism handles <pre> formatting. 
+            
+            // Basic Line Break logic
+            html = html.replace(/\n\n/g, '<div class="h-4"></div>');
+            html = html.replace(/\n/g, '<br>');
+
+            return html;
+        }
+
+        /**
+         * MESSAGE ACTIONS
+         */
+        window.copyToClipboard = (encodedText) => {
+            const text = decodeURIComponent(encodedText);
+            navigator.clipboard.writeText(text);
+            showToast("Copied to clipboard", "success");
+        };
+
+        window.downloadTextFromURI = (encodedText) => {
+            downloadText(decodeURIComponent(encodedText), "ai-message.txt");
+        };
+        
+        function downloadText(text, filename) {
+            const blob = new Blob([text], { type: "text/plain" });
+            const url = window.URL.createObjectURL(blob);
+            const a = document.createElement("a");
+            a.href = url;
+            a.download = filename;
+            a.click();
+            window.URL.revokeObjectURL(url);
+        }
+
+        window.openExportModal = (encodedText) => {
+            const text = decodeURIComponent(encodedText);
+            els.exportTextarea.value = text;
+            els.exportModal.show();
+        };
+
+        window.toggleSpeech = (btn, encodedText) => {
+            const text = decodeURIComponent(encodedText);
+            const icon = btn.querySelector('.material-icons');
+
+            if (state.isSpeaking) {
+                window.speechSynthesis.cancel();
+                state.isSpeaking = false;
+                // Reset all volume icons (brute force for simplicity)
+                document.querySelectorAll('.message-actions button span').forEach(s => {
+                    if (s.innerText === 'stop') s.innerText = 'volume_up';
+                });
+                return;
+            }
+
+            if ('speechSynthesis' in window) {
+                const utterance = new SpeechSynthesisUtterance(text);
+                
+                utterance.onstart = () => {
+                    state.isSpeaking = true;
+                    icon.innerText = 'stop';
+                };
+                
+                utterance.onend = () => {
+                    state.isSpeaking = false;
+                    icon.innerText = 'volume_up';
+                };
+                
+                utterance.onerror = () => {
+                    state.isSpeaking = false;
+                    icon.innerText = 'volume_up';
+                };
+
+                window.speechSynthesis.speak(utterance);
+            } else {
+                showToast("Text-to-speech not supported.", "error");
+            }
+        };
+
+        /**
+         * UTILS
+         */
+        function showToast(message, type = "success") {
+            els.toast.innerText = message;
+            els.toast.className = `fixed bottom-5 right-5 px-4 py-2 rounded shadow-lg text-white text-sm transform transition-all duration-300 z-50 ${type === 'error' ? 'bg-red-500' : 'bg-green-600'}`;
+            
+            // Show
+            setTimeout(() => {
+                els.toast.classList.remove('translate-y-20', 'opacity-0');
+            }, 10);
+
+            // Hide
+            setTimeout(() => {
+                els.toast.classList.add('translate-y-20', 'opacity-0');
+            }, 3000);
+        }
+
+    </script>
+</body>
+</html>
